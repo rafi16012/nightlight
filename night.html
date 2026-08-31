@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Bangladesh After Dark</title>
+<meta name="description" content="Satellite nighttime lights over Bangladesh, 1992 to 2013.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,75..125,300..800;1,75..125,400&display=swap" rel="stylesheet">
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   CONFIG — the only part you need to edit.
+   ═══════════════════════════════════════════════════════════════ */
+const CONFIG = {
+
+  title:     "Bangladesh after dark",
+  subtitle:  "Satellite nighttime lights, 1992\u20132013",
+  credit:    "DMSP-OLS stable lights \u00b7 NOAA / NGDC",
+  place:     "Bangladesh",
+
+  // The years you actually have frames for. They do NOT need to be
+  // evenly spaced — the player moves through calendar time, so an
+  // eight-year gap takes roughly twice as long to cross as a four-year
+  // one, and the timeline spaces the marks by date rather than by count.
+  years: [1992, 2000, 2008, 2013],
+
+  framePath: (year) => `frames/${year}.png`,
+
+  // Must match the background baked into your exported images, or you'll
+  // see a seam where the letterboxing starts. Sampled from yours: #3e3e3e
+  ground: "#3e3e3e",
+
+  secondsPerYear: 0.42,   // seconds per calendar year of animation
+  holdAtEnd:      2.6,    // pause on the final frame before looping
+  autoplay:       true,
+  loop:           true,
+
+  // Optional overlay drawn above the lights, e.g. boundaries exported
+  // separately. Yours are already baked in, so leave this null.
+  overlay: null,
+  overlayOpacity: 0.55,
+
+  // Optional. One value per year in `years`. Turns on the chart.
+  stats: null,
+  statsLabel: "Mean radiance (DN)",
+
+  preview: "auto",        // "auto" | "force" | "off"
+};
+</script>
+
+<style>
+:root{
+  --ground:  #3e3e3e;
+  --paper:   #f4f1ee;
+  --smoke:   #b5b0ad;
+  --hairline:#5c5c5c;
+  --ember:   #fca50a;   /* magma's warm end, used for the UI accent */
+  --ember-d: #8a5a12;
+  --ui:      "Archivo", ui-sans-serif, system-ui, sans-serif;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--ground);
+  color:var(--paper);
+  font-family:var(--ui);
+  font-variation-settings:"wdth" 100;
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+
+#app{height:100%;display:grid;grid-template-rows:1fr auto}
+
+/* ── stage ─────────────────────────────────────────────── */
+.stage{position:relative;overflow:hidden;min-height:0}
+
+/* Frames carry their own background, so they composite normally and
+   `contain` keeps the country's outline intact. Every layer shares the
+   source dimensions, so they letterbox identically and stay registered. */
+.frames{position:absolute;inset:0;z-index:1}
+.frames > *{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  will-change:opacity;
+}
+.over{
+  position:absolute;inset:0;z-index:2;
+  width:100%;height:100%;
+  object-fit:contain;
+  pointer-events:none;
+}
+
+/* ── year ──────────────────────────────────────────────── */
+.topzone{
+  position:absolute;
+  top:clamp(14px,2.6vw,34px);
+  left:clamp(16px,3.4vw,52px);
+  right:clamp(16px,3.4vw,52px);
+  z-index:4;
+  pointer-events:none;
+}
+.hud{text-align:center}
+#year{
+  display:block;
+  font-size:clamp(2.9rem,7.2vw,6rem);
+  line-height:.94;
+  font-weight:600;
+  font-variation-settings:"wdth" 108,"wght" 600;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:-.018em;
+  color:var(--paper);
+  text-shadow:0 2px 26px rgba(0,0,0,.55);
+}
+.hud .place{
+  font-size:clamp(.66rem,1.3vw,.8rem);
+  font-weight:500;
+  letter-spacing:.06em;
+  color:var(--ember);
+  margin-bottom:.5em;
+}
+
+/* ── masthead ──────────────────────────────────────────── */
+.mast{
+  position:absolute;
+  left:clamp(16px,3.4vw,52px);
+  bottom:clamp(14px,2.4vw,30px);
+  max-width:22rem;
+  z-index:4;
+  pointer-events:none;
+}
+.mast h1{
+  font-size:clamp(.95rem,1.9vw,1.25rem);
+  font-weight:600;
+  font-variation-settings:"wdth" 92,"wght" 600;
+  letter-spacing:-.012em;
+  line-height:1.15;
+}
+.mast p{
+  margin-top:.35em;
+  font-size:clamp(.7rem,1.35vw,.82rem);
+  line-height:1.45;
+  color:var(--smoke);
+}
+
+/* ── chart ─────────────────────────────────────────────── */
+.chart{
+  position:absolute;
+  right:clamp(16px,3.4vw,52px);
+  bottom:clamp(16px,3vw,34px);
+  width:clamp(140px,20vw,248px);
+  z-index:4;
+  pointer-events:none;
+}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart .cap{margin-top:.5em;font-size:.68rem;line-height:1.35;
+            color:var(--smoke);text-align:right}
+.chart .val{color:var(--paper);font-weight:600;font-variant-numeric:tabular-nums}
+
+/* ── controls ──────────────────────────────────────────── */
+.bar{
+  display:flex;align-items:center;
+  gap:clamp(12px,2vw,22px);
+  padding:clamp(12px,1.6vw,18px) clamp(16px,3.4vw,52px)
+          calc(clamp(14px,1.9vw,22px) + env(safe-area-inset-bottom));
+  border-top:1px solid var(--hairline);
+  background:var(--ground);
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,.track:focus-visible{
+  outline:2px solid var(--ember);outline-offset:3px;border-radius:2px;
+}
+
+#play{
+  flex:none;width:2.65rem;height:2.65rem;
+  border:1px solid #ffffff40;border-radius:50%;
+  display:grid;place-items:center;
+  transition:border-color .18s,background-color .18s;
+}
+#play:hover{border-color:var(--ember);background:#fca50a1f}
+#play svg{width:.95rem;height:.95rem;fill:var(--paper);transform:translateX(1px)}
+#play[data-state="playing"] svg{transform:none}
+
+.track{position:relative;flex:1 1 auto;height:2.65rem;
+       cursor:pointer;touch-action:none}
+.rail{position:absolute;left:0;right:0;top:50%;height:1px;background:#ffffff33}
+.fill{position:absolute;left:0;top:50%;height:1px;
+      background:var(--ember);transform-origin:left}
+.ticks{position:absolute;inset:0}
+.tick{position:absolute;top:50%;width:1px;height:11px;
+      background:#ffffff59;transform:translate(-.5px,-5.5px)}
+.tick.past{background:var(--ember)}
+.tickLabel{position:absolute;top:calc(50% + 10px);
+  font-size:.63rem;color:var(--smoke);
+  transform:translateX(-50%);font-variant-numeric:tabular-nums}
+.head{position:absolute;top:50%;width:9px;height:9px;border-radius:50%;
+  background:var(--paper);box-shadow:0 0 14px 2px rgba(252,165,10,.8);
+  transform:translate(-4.5px,-4.5px);pointer-events:none}
+
+#speed{
+  flex:none;font-size:.78rem;font-weight:500;color:var(--smoke);
+  font-variant-numeric:tabular-nums;padding:.42em .7em;
+  border:1px solid #ffffff2e;border-radius:100px;
+  transition:color .18s,border-color .18s;
+}
+#speed:hover{color:var(--paper);border-color:#ffffff5c}
+
+.credit{flex:none;font-size:.66rem;color:#8d8886;max-width:15rem;line-height:1.4}
+
+@media (max-width:760px){
+  .credit{display:none}
+  .chart{display:none}
+  .mast p{display:none}
+}
+
+/* ── loading ───────────────────────────────────────────── */
+#boot{position:fixed;inset:0;z-index:20;background:var(--ground);
+      display:grid;place-items:center;transition:opacity .7s ease}
+#boot.gone{opacity:0;pointer-events:none}
+.bootInner{width:min(19rem,64vw);text-align:center}
+.bootBar{height:1px;background:#ffffff2e;position:relative;overflow:hidden}
+.bootBar i{position:absolute;inset:0;background:var(--ember);
+           transform:scaleX(0);transform-origin:left;transition:transform .3s ease}
+.bootTxt{margin-top:1.1em;font-size:.74rem;color:var(--smoke);
+         font-variant-numeric:tabular-nums}
+
+/* ── preview notice ────────────────────────────────────── */
+#notice{
+  position:absolute;left:0;top:0;
+  max-width:19rem;text-align:left;
+  font-size:.72rem;line-height:1.5;color:var(--ember);
+  border-left:2px solid var(--ember);padding-left:.85em;
+}
+#notice b{font-weight:600;display:block;color:var(--paper);margin-bottom:.15em}
+
+@media (prefers-reduced-motion:reduce){#boot{transition:none}}
+
+/* After #notice, so equal specificity resolves by order. Absolute
+   placement would drop the notice on top of the year on a narrow screen. */
+@media (max-width:760px){
+  #notice{position:static;max-width:100%;font-size:.68rem;margin-bottom:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="stage">
+    <div class="frames" id="frames"></div>
+    <img class="over" id="over" alt="" hidden>
+
+    <div class="topzone">
+      <div id="notice" hidden>
+        <b>Preview frames</b>
+        Generated stand-ins, not satellite data. Drop your real frames into
+        <code>/frames</code> to replace them.
+      </div>
+      <div class="hud">
+        <div class="place" id="place"></div>
+        <span id="year"></span>
+      </div>
+    </div>
+
+    <div class="mast">
+      <h1 id="mTitle"></h1>
+      <p id="mSub"></p>
+    </div>
+
+    <div class="chart" id="chart" hidden>
+      <svg id="spark" viewBox="0 0 240 62" preserveAspectRatio="none" aria-hidden="true">
+        <path id="sparkArea" fill="rgba(252,165,10,.15)"></path>
+        <path id="sparkLine" fill="none" stroke="var(--ember)"
+              stroke-width="1.5" stroke-linejoin="round"></path>
+        <circle id="sparkDot" r="2.8" fill="var(--paper)"></circle>
+      </svg>
+      <div class="cap"><span class="val" id="statVal"></span>
+        <span id="statLabel"></span></div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <button id="play" data-state="paused" aria-label="Play">
+      <svg viewBox="0 0 16 16" id="playIcon"><path d="M3 1.5v13l11-6.5z"/></svg>
+    </button>
+    <div class="track" id="track" role="slider" tabindex="0" aria-label="Year">
+      <div class="rail"></div>
+      <div class="fill" id="fill"></div>
+      <div class="ticks" id="ticks"></div>
+      <div class="head" id="head"></div>
+    </div>
+    <button id="speed">1&times;</button>
+    <div class="credit" id="credit"></div>
+  </div>
+</div>
+
+<div id="boot">
+  <div class="bootInner">
+    <div class="bootBar"><i id="bootFill"></i></div>
+    <div class="bootTxt" id="bootTxt">Loading</div>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+
+/* ── the year list ───────────────────────────────────────────────
+   Sorted, deduplicated, and NOT assumed to be contiguous. Everything
+   downstream works in calendar time rather than frame index, so gaps
+   in the record read as gaps rather than being silently evened out. */
+const YEARS = [...new Set(CONFIG.years)].sort((a,b) => a-b);
+const N  = YEARS.length;
+const Y0 = YEARS[0];
+const Y1 = YEARS[N-1];
+const SPAN = Y1 - Y0 || 1;
+
+document.documentElement.style.setProperty("--ground", CONFIG.ground);
+$("mTitle").textContent = CONFIG.title;
+$("mSub").textContent   = CONFIG.subtitle;
+$("credit").textContent = CONFIG.credit;
+$("place").textContent  = CONFIG.place;
+$("year").textContent   = Y0;
+$("track").setAttribute("aria-valuemin", Y0);
+$("track").setAttribute("aria-valuemax", Y1);
+
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+if (CONFIG.overlay){
+  const o = $("over");
+  o.style.opacity = CONFIG.overlayOpacity;
+  o.onload  = () => { o.hidden = false; };
+  o.onerror = () => { o.hidden = true;  };
+  o.src = CONFIG.overlay;
+}
+
+/* ── loading ─────────────────────────────────────────────────── */
+let layers = [];
+
+function loadReal(){
+  let done = 0, failed = false;
+  const imgs = YEARS.map(y => {
+    const im = new Image();
+    im.decoding = "async";
+    im.alt = `Nighttime lights, ${y}`;
+    return im;
+  });
+
+  return new Promise(resolve => {
+    imgs.forEach((im, i) => {
+      const step = ok => {
+        if (!ok) failed = true;
+        done++;
+        $("bootFill").style.transform = `scaleX(${done / N})`;
+        $("bootTxt").textContent =
+          failed ? "Building preview" : `Loading  ${done} / ${N}`;
+        if (done === N) resolve(failed ? null : imgs);
+      };
+      im.onload  = () => step(true);
+      im.onerror = () => step(false);
+      im.src = CONFIG.framePath(YEARS[i]);
+    });
+  });
+}
+
+async function init(){
+  let frames = null;
+  if (CONFIG.preview !== "force") frames = await loadReal();
+  if (!frames){
+    frames = buildPreview();
+    $("notice").hidden = false;
+  }
+
+  const holder = $("frames");
+  frames.forEach(el => { el.style.opacity = 0; holder.appendChild(el); });
+  layers = frames;
+
+  buildTicks();
+  buildChart();
+  render();
+
+  $("boot").classList.add("gone");
+  setTimeout(() => { const b = $("boot"); if (b) b.remove(); }, 800);
+
+  if (CONFIG.autoplay && !reduce) setPlaying(true);
+  requestAnimationFrame(loop);
+}
+
+/* ── playback ────────────────────────────────────────────────────
+   `t` is a calendar year, not a frame index. With frames at 1992,
+   2000, 2008 and 2013 that means the eight-year gaps genuinely take
+   longer to cross than the five-year one. */
+let t = Y0;
+let playing = false;
+let speed = 1;
+let holdLeft = 0;
+let last = 0;
+
+function setPlaying(on){
+  playing = on;
+  $("play").dataset.state = on ? "playing" : "paused";
+  $("play").setAttribute("aria-label", on ? "Pause" : "Play");
+  $("playIcon").innerHTML = on
+    ? '<path d="M3 1.5h4v13H3zM9 1.5h4v13H9z"/>'
+    : '<path d="M3 1.5v13l11-6.5z"/>';
+}
+
+function loop(now){
+  if (!last) last = now;
+  const dt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+
+  if (playing){
+    if (holdLeft > 0){
+      holdLeft -= dt;
+      if (holdLeft <= 0){
+        if (CONFIG.loop) t = Y0;
+        else setPlaying(false);
+      }
+    } else {
+      t += dt * speed / CONFIG.secondsPerYear;
+      if (t >= Y1){ t = Y1; holdLeft = CONFIG.holdAtEnd; }
+    }
+    render();
+  }
+  requestAnimationFrame(loop);
+}
+
+/* Layers stack bottom to top. Layer 0 stays opaque; each layer above
+   fades in across its own interval, so a wide gap dissolves slowly and
+   a narrow one quickly. Frame index never enters into it. */
+function render(){
+  layers[0].style.opacity = 1;
+  for (let i = 1; i < N; i++){
+    const a = YEARS[i-1], b = YEARS[i];
+    layers[i].style.opacity = clamp((t - a) / (b - a), 0, 1);
+  }
+
+  const idx = nearestIndex(t);
+  $("year").textContent = YEARS[idx];
+  $("track").setAttribute("aria-valuenow", YEARS[idx]);
+  $("track").setAttribute("aria-valuetext", String(YEARS[idx]));
+
+  const f = (t - Y0) / SPAN;
+  $("fill").style.transform = `scaleX(${f})`;
+  $("head").style.left = `${f * 100}%`;
+  for (let i = 0; i < tickEls.length; i++)
+    tickEls[i].classList.toggle("past", YEARS[i] <= t);
+
+  updateChart(idx);
+}
+
+function nearestIndex(year){
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < N; i++){
+    const d = Math.abs(YEARS[i] - year);
+    if (d < bd){ bd = d; best = i; }
+  }
+  return best;
+}
+
+/* ── scrubber ────────────────────────────────────────────────── */
+let tickEls = [];
+
+function buildTicks(){
+  const box = $("ticks");
+  // Marks sit at their true date, so uneven coverage is visible rather
+  // than smoothed into equal steps.
+  const dense = N > 10;
+  YEARS.forEach(y => {
+    const x = ((y - Y0) / SPAN) * 100;
+    const el = document.createElement("div");
+    el.className = "tick";
+    el.style.left = `${x}%`;
+    box.appendChild(el);
+    if (!dense || y % 5 === 0){
+      const l = document.createElement("div");
+      l.className = "tickLabel";
+      l.textContent = y;
+      l.style.left = `${x}%`;
+      box.appendChild(l);
+    }
+  });
+  tickEls = [...box.querySelectorAll(".tick")];
+}
+
+const track = $("track");
+let scrubbing = false, wasPlaying = false;
+
+function scrubTo(clientX){
+  const r = track.getBoundingClientRect();
+  t = Y0 + clamp((clientX - r.left) / r.width, 0, 1) * SPAN;
+  holdLeft = 0;
+  render();
+}
+
+track.addEventListener("pointerdown", e => {
+  scrubbing = true; wasPlaying = playing;
+  setPlaying(false);
+  track.setPointerCapture(e.pointerId);
+  scrubTo(e.clientX);
+});
+track.addEventListener("pointermove", e => scrubbing && scrubTo(e.clientX));
+track.addEventListener("pointerup", () => {
+  scrubbing = false;
+  if (wasPlaying) setPlaying(true);
+});
+track.addEventListener("keydown", e => {
+  const step = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
+  if (!step) return;
+  e.preventDefault();
+  setPlaying(false);
+  // Snap to real frames, not to arbitrary calendar years.
+  t = YEARS[clamp(nearestIndex(t) + step, 0, N - 1)];
+  holdLeft = 0;
+  render();
+});
+
+$("play").onclick = () => {
+  if (!playing && t >= Y1){ t = Y0; holdLeft = 0; }
+  setPlaying(!playing);
+};
+
+const SPEEDS = [0.5, 1, 2, 4];
+$("speed").onclick = () => {
+  speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+  $("speed").innerHTML = `${speed}&times;`;
+};
+
+addEventListener("keydown", e => {
+  if (e.code === "Space" && e.target === document.body){
+    e.preventDefault();
+    $("play").click();
+  }
+});
+
+/* ── chart ───────────────────────────────────────────────────── */
+let chartPts = null;
+
+function buildChart(){
+  const s = CONFIG.stats;
+  if (!s) return;
+  const vals = YEARS.map(y => s[y]);
+  if (vals.some(v => typeof v !== "number")) return;
+
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const range = hi - lo || 1;
+  chartPts = vals.map((v, i) => ({
+    x: ((YEARS[i] - Y0) / SPAN) * 240,   // by date, matching the timeline
+    y: 58 - ((v - lo) / range) * 52,
+    v
+  }));
+
+  const d = chartPts.map((p, i) =>
+    `${i ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+  $("sparkLine").setAttribute("d", d);
+  $("sparkArea").setAttribute("d", `${d} L240 62 L0 62 Z`);
+  $("statLabel").textContent = " " + CONFIG.statsLabel;
+  $("chart").hidden = false;
+}
+
+function updateChart(i){
+  if (!chartPts) return;
+  const p = chartPts[i];
+  $("sparkDot").setAttribute("cx", p.x);
+  $("sparkDot").setAttribute("cy", p.y);
+  $("statVal").textContent = p.v.toFixed(2);
+  const clip = 100 - (p.x / 240) * 100;
+  $("sparkLine").style.clipPath = `inset(0 ${clip}% 0 0)`;
+  $("sparkArea").style.clipPath = `inset(0 ${clip}% 0 0)`;
+}
+
+/* ── preview frames ──────────────────────────────────────────────
+   Stand-ins so the piece runs before real frames are in place.
+   Magma ramp on the configured ground, deliberately schematic. */
+function buildPreview(){
+  const W = 760, H = 540;
+
+  let seed = 19920101;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+
+  // magma, sampled coarsely
+  const RAMP = [[0,0,4],[28,16,68],[79,18,123],[129,37,129],
+                [181,54,122],[229,92,48],[251,164,10],[252,253,191]];
+  const ramp = u => {
+    const x = clamp(u,0,1) * (RAMP.length - 1);
+    const i = Math.min(Math.floor(x), RAMP.length - 2), f = x - i;
+    const a = RAMP[i], b = RAMP[i+1];
+    return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f];
+  };
+
+  const cx = W * .5, cy = H * .5;
+  const nodes = [];
+  for (let i = 0; i < 150; i++){
+    const a = rnd() * Math.PI * 2, r = Math.pow(rnd(), .6) * W * .10;
+    nodes.push({ x: cx + Math.cos(a)*r, y: cy + Math.sin(a)*r*1.1,
+                 born: 1988 + rnd()*4, rate: .055, size: 16 + rnd()*18 });
+  }
+  for (let i = 0; i < 260; i++){
+    const a = rnd() * Math.PI * 2, r = W * .09 + Math.pow(rnd(),.75) * W * .26;
+    nodes.push({ x: cx + Math.cos(a)*r, y: cy + Math.sin(a)*r*.78,
+                 born: 1993 + rnd()*18, rate: .07 + rnd()*.05,
+                 size: 7 + rnd()*14 });
+  }
+
+  return YEARS.map(year => {
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const g = c.getContext("2d");
+
+    g.fillStyle = CONFIG.ground;
+    g.fillRect(0, 0, W, H);
+
+    // stand-in landmass
+    g.save();
+    g.beginPath();
+    g.moveTo(W*.26, H*.10);
+    g.bezierCurveTo(W*.74, H*.06, W*.80, H*.40, W*.76, H*.58);
+    g.bezierCurveTo(W*.72, H*.86, W*.44, H*.94, W*.32, H*.82);
+    g.bezierCurveTo(W*.16, H*.66, W*.12, H*.30, W*.26, H*.10);
+    g.closePath();
+    g.clip();
+    g.fillStyle = "rgb(0,0,4)";
+    g.fillRect(0, 0, W, H);
+
+    g.globalCompositeOperation = "lighter";
+    for (const n of nodes){
+      const age = year - n.born;
+      if (age <= 0) continue;
+      const lum = clamp(1 - Math.exp(-age * n.rate), 0, 1);
+      const rad = n.size * (.5 + lum * .8);
+      const grad = g.createRadialGradient(n.x, n.y, 0, n.x, n.y, rad);
+      for (let s = 0; s <= 4; s++){
+        const p = s / 4;
+        const [r,gr,b] = ramp(lum * (1 - p * .82));
+        grad.addColorStop(p, `rgba(${r|0},${gr|0},${b|0},${(1-p)*.55})`);
+      }
+      g.fillStyle = grad;
+      g.beginPath(); g.arc(n.x, n.y, rad, 0, Math.PI*2); g.fill();
+    }
+    g.globalCompositeOperation = "source-over";
+    g.restore();
+    return c;
+  });
+}
+
+init();
+})();
+</script>
+</body>
+</html>
